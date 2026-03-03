@@ -15,15 +15,15 @@
 
 After building, integrate into LicheeRV-Nano-Build:
 ```bash
-OVERLAY=~/LicheeRV-Nano-Build/ramdisk/rootfs/overlay/musl_riscv64
-
+OVERLAY=~/LicheeRV-Nano-Build/buildroot/board/cvitek/SG200X/overlay
+mkdir -p $OVERLAY/root
 cp src/build/{CSICapture,CSIStream,CSIHiResStream} $OVERLAY/root/
 cp -r libs_patch $OVERLAY/root/
 ```
 
-Add to `$OVERLAY/system/auto.sh` LD_LIBRARY_PATH:
+Add LD_LIBRARY_PATH to `$OVERLAY/etc/profile.d/middleware.sh`:
 ```
-/root/libs_patch/lib:/root/libs_patch/middleware_v2:/root/libs_patch/middleware_v2_3rd:/root/libs_patch/tpu_sdk_libs:/root/libs_patch:/root/libs_patch/opencv
+export LD_LIBRARY_PATH=/root/libs_patch/lib:/root/libs_patch/middleware_v2:/root/libs_patch/middleware_v2_3rd:/root/libs_patch/tpu_sdk_libs:/root/libs_patch:/root/libs_patch/opencv:$LD_LIBRARY_PATH
 ```
 
 Then rebuild firmware:
