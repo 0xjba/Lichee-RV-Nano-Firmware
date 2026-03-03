@@ -1,0 +1,5 @@
+opencv-mobile-4.13.0/build/
+src/build/
+*.tar
+*.tar.gz
+*.zip
