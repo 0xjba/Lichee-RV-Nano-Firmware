@@ -11,7 +11,30 @@
 ./build.sh
 ```
 
-## Deploy
+## Firmware Integration
+
+After building, integrate into LicheeRV-Nano-Build:
+```bash
+OVERLAY=~/LicheeRV-Nano-Build/ramdisk/rootfs/overlay/musl_riscv64
+
+cp src/build/{CSICapture,CSIStream,CSIHiResStream} $OVERLAY/root/
+cp -r libs_patch $OVERLAY/root/
+```
+
+Add to `$OVERLAY/system/auto.sh` LD_LIBRARY_PATH:
+```
+/root/libs_patch/lib:/root/libs_patch/middleware_v2:/root/libs_patch/middleware_v2_3rd:/root/libs_patch/tpu_sdk_libs:/root/libs_patch:/root/libs_patch/opencv
+```
+
+Then rebuild firmware:
+```bash
+cd ~/LicheeRV-Nano-Build
+source build/cvisetup.sh
+defconfig sg2002_licheervnano_sd
+build_all
+```
+
+## Deploy (without firmware rebuild)
 ```bash
 cd src/build
 scp -P 2222 CSICapture CSIStream CSIHiResStream root@<board-ip>:/root/
@@ -22,16 +45,9 @@ scp -P 2222 CSICapture CSIStream CSIHiResStream root@<board-ip>:/root/
 # Single capture
 ./CSICapture /root/capture.jpg 30
 
-# MJPEG stream (grayscale) on port 7777
+# MJPEG stream grayscale on port 7777
 ./CSIStream
 
-# MJPEG stream (color) on port 7778
+# MJPEG stream color 1920x1440 on port 7778
 ./CSIHiResStream
-```
-
-## Board setup
-
-`libs_patch/` must be at `/root/libs_patch/` on the board with LD_LIBRARY_PATH set:
-```bash
-export LD_LIBRARY_PATH=/root/libs_patch/lib:/root/libs_patch/middleware_v2:/root/libs_patch/middleware_v2_3rd:/root/libs_patch/tpu_sdk_libs:/root/libs_patch:/root/libs_patch/opencv
 ```
