@@ -16,11 +16,11 @@
 
 // ── Config ────────────────────────────────────────────────────────────────────
 #define INPUT_DEVICE          "/dev/input/event0"
-#define GEMINI_KEY            "AIzaSyCmaq0vaKmDujCFQZjC93TGv9ag0HB9-LE"
 #define GEMINI_VISION_URL     "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent"
 #define GEMINI_TTS_URL        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent"
 #define WARMUP_FRAMES         15
 #define WIFI_CONFIG_FILE      "/etc/camera-wifi.conf"
+#define GEMINI_CONFIG_FILE    "/etc/vision-assistant.conf"
 #define WIFI_IFACE            "wlan0"
 #define WPA_CONF              "/tmp/camera-wpa.conf"
 #define IDLE_TIMEOUT_SEC      30
@@ -109,6 +109,23 @@ static std::string read_line(const char *prompt)
     while ((c = getchar()) != '\n' && c != EOF)
         result += (char)c;
     return result;
+}
+
+// ── Gemini API key ────────────────────────────────────────────────────────────
+static std::string load_gemini_key()
+{
+    std::ifstream f(GEMINI_CONFIG_FILE);
+    if (f.is_open()) {
+        std::string key;
+        std::getline(f, key);
+        if (!key.empty()) return key;
+    }
+    printf("\n=== First Time Setup ===\n");
+    std::string key = read_line_silent("Enter Gemini API Key: ");
+    std::ofstream out(GEMINI_CONFIG_FILE);
+    out << key << "\n";
+    printf("Key saved to %s\n", GEMINI_CONFIG_FILE);
+    return key;
 }
 
 // ── WiFi config ───────────────────────────────────────────────────────────────
@@ -262,14 +279,16 @@ static size_t curl_write_cb(void *ptr, size_t size, size_t nmemb, void *userdata
     return size * nmemb;
 }
 
-static std::string curl_post_json(const char *url, const std::string &body)
+static std::string curl_post_json(const char *url, const std::string &body,
+                                  const std::string &api_key)
 {
     CURL *curl = curl_easy_init();
     if (!curl) { fprintf(stderr, "ERROR: curl init\n"); return ""; }
     std::string response;
+    std::string key_header = std::string("x-goog-api-key: ") + api_key;
     struct curl_slist *headers = NULL;
     headers = curl_slist_append(headers, "Content-Type: application/json");
-    headers = curl_slist_append(headers, "x-goog-api-key: " GEMINI_KEY);
+    headers = curl_slist_append(headers, key_header.c_str());
     curl_easy_setopt(curl, CURLOPT_URL,           url);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER,    headers);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS,    body.c_str());
@@ -314,7 +333,7 @@ static bool record_audio(const char *path, int seconds)
 }
 
 // ── ALSA playback init ────────────────────────────────────────────────────────
-// Restores system-wide audio state saved at boot via /etc/init.d/S05audio
+// Restores system-wide audio state saved at boot via /etc/init.d/S99audio
 static void alsa_init_playback()
 {
     system("alsactl restore 2>/dev/null");
@@ -344,7 +363,8 @@ static void play_audio(const char *path)
 
 // ── Gemini Vision + Audio → text ──────────────────────────────────────────────
 static std::string query_gemini_vision(const std::string &b64_image,
-                                       const std::string &b64_audio)
+                                       const std::string &b64_audio,
+                                       const std::string &api_key)
 {
     std::string parts;
     parts += "{\"inline_data\":{\"mime_type\":\"image/jpeg\",\"data\":\"" + b64_image + "\"}}";
@@ -358,7 +378,7 @@ static std::string query_gemini_vision(const std::string &b64_image,
     }
     std::string body = "{\"contents\":[{\"parts\":[" + parts + "]}]}";
     printf("Querying Gemini Vision...\n");
-    std::string response = curl_post_json(GEMINI_VISION_URL, body);
+    std::string response = curl_post_json(GEMINI_VISION_URL, body, api_key);
     if (response.empty()) return "";
     std::string text = json_extract(response, "text");
     if (text.empty())
@@ -367,7 +387,8 @@ static std::string query_gemini_vision(const std::string &b64_image,
 }
 
 // ── Gemini TTS → decode → 24k→16k → write raw PCM ───────────────────────────
-static uint32_t query_gemini_tts(const std::string &text, const char *output_path)
+static uint32_t query_gemini_tts(const std::string &text, const char *output_path,
+                                 const std::string &api_key)
 {
     std::string body =
         "{\"contents\":[{\"parts\":[{\"text\":\"" + json_escape(text) + "\"}]}],"
@@ -377,7 +398,7 @@ static uint32_t query_gemini_tts(const std::string &text, const char *output_pat
                 "{\"voiceName\":\"charon\"}}}"
         "}}";
     printf("Generating TTS...\n");
-    std::string response = curl_post_json(GEMINI_TTS_URL, body);
+    std::string response = curl_post_json(GEMINI_TTS_URL, body, api_key);
     if (response.empty()) return 0;
 
     std::string b64 = json_extract_raw(response, "data");
@@ -405,7 +426,7 @@ static uint32_t query_gemini_tts(const std::string &text, const char *output_pat
 static bool phone_relay_available() { return false; }
 
 // ── Core query pipeline ───────────────────────────────────────────────────────
-static void process_query_wifi()
+static void process_query_wifi(const std::string &api_key)
 {
     printf("Capturing image...\n");
     std::vector<uchar> jpeg_buf;
@@ -426,11 +447,11 @@ static void process_query_wifi()
         }
     }
 
-    std::string text = query_gemini_vision(b64_image, b64_audio);
+    std::string text = query_gemini_vision(b64_image, b64_audio, api_key);
     if (text.empty()) { printf("No response received.\n"); return; }
     printf("\n--- Response ---\n%s\n----------------\n\n", text.c_str());
 
-    uint32_t num_samples = query_gemini_tts(text, OUTPUT_RAW_FILE);
+    uint32_t num_samples = query_gemini_tts(text, OUTPUT_RAW_FILE, api_key);
     if (num_samples == 0) { printf("TTS failed — text shown above.\n"); return; }
 
     // Restore DAC state — camera pipeline and arecord corrupt audio hardware registers
@@ -469,6 +490,8 @@ int main()
     curl_global_init(CURL_GLOBAL_DEFAULT);
     alsa_init_playback();
 
+    std::string api_key = load_gemini_key();
+
     WifiConfig wifi;
     if (!load_wifi_config(wifi))
         wifi = prompt_wifi_config();
@@ -492,7 +515,7 @@ int main()
             }
         }
 
-        process_query_wifi();
+        process_query_wifi(api_key);
 
         printf("\nPress button within %ds for another query...\n", IDLE_TIMEOUT_SEC);
         if (!wait_for_button(IDLE_TIMEOUT_SEC)) {
