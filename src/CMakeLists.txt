@@ -3,9 +3,6 @@ cmake_minimum_required(VERSION 3.5)
 project(CSIStream)
 set(CMAKE_CXX_STANDARD 11)
 
-SET(CMAKE_C_COMPILER "$ENV{COMPILER}/riscv64-unknown-linux-musl-gcc")
-SET(CMAKE_CXX_COMPILER "$ENV{COMPILER}/riscv64-unknown-linux-musl-g++")
-SET(CMAKE_C_LINK_EXECUTABLE "$ENV{COMPILER}/riscv64-unknown-linux-musl-ld")
 set(CMAKE_SYSTEM_PROCESSOR arm)
 
 set(OpenCV_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../opencv-mobile-4.13.0/build/install/lib/cmake/opencv4")
@@ -20,3 +17,8 @@ target_link_libraries(CSIHiResStream ${OpenCV_LIBS} atomic)
 
 add_executable(CSICapture capture.cpp)
 target_link_libraries(CSICapture ${OpenCV_LIBS} atomic)
+
+add_executable(VisionAssistant vision_assistant.cpp)
+target_link_libraries(VisionAssistant ${OpenCV_LIBS} curl ssl crypto z brotlidec brotlicommon atomic)
+target_include_directories(VisionAssistant PRIVATE /home/alpha_lagoon/LicheeRV-Nano-Build/buildroot/output/host/riscv64-buildroot-linux-musl/sysroot/usr/include)
+target_link_directories(VisionAssistant PRIVATE /home/alpha_lagoon/LicheeRV-Nano-Build/buildroot/output/host/riscv64-buildroot-linux-musl/sysroot/usr/lib)
